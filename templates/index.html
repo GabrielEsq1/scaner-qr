@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lector QR - CCB</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #2c5aa0, #1e3a8a);
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            overflow: hidden;
+            width: 100%;
+            max-width: 500px;
+        }
+        .header {
+            background: #2c5aa0;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header p { font-size: 14px; opacity: 0.9; }
+        .scanner-section { padding: 30px 20px; text-align: center; }
+        .scanner-container { position: relative; margin: 20px 0; }
+        #video {
+            width: 100%;
+            max-width: 400px;
+            height: 300px;
+            border: 3px solid #2c5aa0;
+            border-radius: 10px;
+            background: #000;
+        }
+        .scanner-overlay {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px; height: 200px;
+            border: 3px solid #00ff00;
+            border-radius: 10px;
+            box-shadow: 0 0 0 5000px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+        .buttons {
+            display: flex; gap: 10px; justify-content: center;
+            margin: 20px 0; flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 20px; border: none; border-radius: 8px;
+            font-size: 14px; font-weight: bold; cursor: pointer;
+            transition: all 0.3s ease; display: flex; align-items: center; gap: 8px;
+        }
+        .btn-primary { background: #2c5aa0; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .result-section {
+            padding: 20px; background: #f8f9fa; border-top: 1px solid #dee2e6;
+            display: none;
+        }
+        .result-box {
+            background: white; padding: 15px; border-radius: 8px;
+            border-left: 4px solid #2c5aa0;
+        }
+        .result-label { font-weight: bold; color: #2c5aa0; margin-bottom: 5px; }
+        .result-value { word-break: break-all; margin-bottom: 15px; }
+        .action-buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .alert {
+            padding: 10px 15px; border-radius: 5px; margin: 10px 0; display: none;
+        }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .alert-success { background: #d1edff; color: #155724; border: 1px solid #c3e6cb; }
+        .file-input { display: none; }
+        .status { margin: 10px 0; font-size: 14px; color: #666; }
+        .footer {
+            text-align: center; padding: 15px; background: #f8f9fa;
+            color: #666; font-size: 12px; border-top: 1px solid #dee2e6;
+        }
+        @media (max-width: 480px) {
+            .buttons { flex-direction: column; }
+            .btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📷 Lector de Códigos QR</h1>
+        <p>CCB - Verificación de Promotores</p>
+    </div>
+
+    <div class="scanner-section">
+        <div id="alert" class="alert"></div>
+
+        <div class="scanner-container">
+            <video id="video" playsinline></video>
+            <div class="scanner-overlay"></div>
+        </div>
+
+        <div class="status" id="status">Presiona "Iniciar Cámara" para comenzar</div>
+
+        <div class="buttons">
+            <button id="startBtn" class="btn btn-primary">📹 Iniciar Cámara</button>
+            <button id="switchBtn" class="btn btn-secondary" style="display: none;">🔄 Cambiar Cámara</button>
+            <button id="uploadBtn" class="btn btn-success">📁 Cargar Imagen</button>
+            <button id="stopBtn" class="btn btn-secondary" style="display: none;">⏹️ Detener</button>
+        </div>
+
+        <input type="file" id="fileInput" class="file-input" accept="image/*">
+    </div>
+
+    <div class="result-section" id="resultSection">
+        <div class="result-box">
+            <div class="result-label">Código QR detectado:</div>
+            <div class="result-value" id="qrResult"></div>
+            <div class="action-buttons">
+                <button id="openLinkBtn" class="btn btn-primary">🔗 Abrir Enlace</button>
+                <button id="copyBtn" class="btn btn-success">📋 Copiar</button>
+                <button id="newScanBtn" class="btn btn-secondary">🔄 Nuevo Escaneo</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>© 2025 CCB - Todos los derechos reservados</p>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+<script>
+const video = document.getElementById('video');
+const startBtn = document.getElementById('startBtn');
+const switchBtn = document.getElementById('switchBtn');
+const uploadBtn = document.getElementById('uploadBtn');
+const stopBtn = document.getElementById('stopBtn');
+const fileInput = document.getElementById('fileInput');
+const alertDiv = document.getElementById('alert');
+const statusDiv = document.getElementById('status');
+const resultSection = document.getElementById('resultSection');
+const qrResult = document.getElementById('qrResult');
+const openLinkBtn = document.getElementById('openLinkBtn');
+const copyBtn = document.getElementById('copyBtn');
+const newScanBtn = document.getElementById('newScanBtn');
+
+let stream = null;
+let currentFacingMode = 'environment';
+let scanInterval = null;
+
+// Alerta
+function showAlert(message, type = 'error') {
+    alertDiv.textContent = message;
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.style.display = 'block';
+    setTimeout(() => alertDiv.style.display = 'none', 5000);
+}
+
+function updateStatus(message) {
+    statusDiv.textContent = message;
+}
+
+// Iniciar cámara
+async function startCamera() {
+    try {
+        updateStatus('Iniciando cámara...');
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+        video.srcObject = stream;
+        await video.play();
+        updateStatus('Cámara activa - Escaneando códigos QR...');
+        startBtn.style.display = 'none';
+        switchBtn.style.display = 'flex';
+        stopBtn.style.display = 'flex';
+        startQRScanning();
+    } catch (error) {
+        console.error(error);
+        showAlert('No se pudo acceder a la cámara: ' + error.message);
+    }
+}
+
+// Cambiar cámara
+async function switchCamera() {
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+    await startCamera();
+}
+
+// Detener cámara
+function stopCamera() {
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+    }
+    if (scanInterval) {
+        clearInterval(scanInterval);
+        scanInterval = null;
+    }
+    video.srcObject = null;
+    startBtn.style.display = 'flex';
+    switchBtn.style.display = 'none';
+    stopBtn.style.display = 'none';
+    updateStatus('Cámara detenida');
+}
+
+// Escanear QR
+function startQRScanning() {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    scanInterval = setInterval(() => {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (code) handleQRResult(code.data);
+        }
+    }, 100);
+}
+
+// Procesar imagen cargada
+function processImage(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            context.drawImage(img, 0, 0);
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (code) handleQRResult(code.data);
+            else showAlert('No se detectó ningún código QR');
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// Mostrar resultado
+function handleQRResult(result) {
+    stopCamera();
+    qrResult.textContent = result;
+    resultSection.style.display = 'block';
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+    showAlert('¡Código QR detectado correctamente!', 'success');
+    updateStatus('Escaneo completado');
+
+    // Si es link, abrir directamente
+    if (result.startsWith('http://') || result.startsWith('https://')) {
+        window.open(result, '_blank');
+    }
+
+    openLinkBtn.onclick = () => {
+        if (result.startsWith('http://') || result.startsWith('https://')) {
+            window.open(result, '_blank');
+        } else {
+            showAlert('El código QR no contiene un enlace válido');
+        }
+    };
+    copyBtn.onclick = () => {
+        navigator.clipboard.writeText(result)
+            .then(() => showAlert('Texto copiado al portapapeles', 'success'))
+            .catch(() => showAlert('Error al copiar texto'));
+    };
+    newScanBtn.onclick = () => {
+        resultSection.style.display = 'none';
+        qrResult.textContent = '';
+        updateStatus('Listo para nuevo escaneo');
+        startBtn.style.display = 'flex';
+    };
+}
+
+// Eventos
+startBtn.addEventListener('click', startCamera);
+switchBtn.addEventListener('click', switchCamera);
+stopBtn.addEventListener('click', stopCamera);
+uploadBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) {
+        updateStatus('Procesando imagen...');
+        processImage(file);
+    }
+});
+window.addEventListener('beforeunload', stopCamera);
+updateStatus('Haz clic en "Iniciar Cámara" para comenzar');
+</script>
+</body>
+</html>
